@@ -3,9 +3,10 @@ package sequense
 import "time"
 
 const (
-	ItemNone ItemID = -iota
-	ItemStop
-	ItemError
+	ItemStartID ItemID = -iota
+	ItemErrorID
+	ItemWaitID
+	ItemDoneID
 )
 
 type ItemID int
@@ -29,29 +30,52 @@ type Item struct {
 	Result        TaskResult
 }
 
+func NewAST(items ...Item) *AST {
+	ast := new(AST)
+	ast.Tree = make(map[ItemID]Item)
+	for _, item := range items {
+		ast.Tree[item.ID] = item
+	}
+	return ast
+}
+
 type AST struct {
-	ID          ASTID
-	PartnerID   string
-	FirstItem   ItemID
-	CurrentItem ItemID
-	Tree        [ItemID]Item
+	CurrentID ItemID
+	Tree      map[ItemID]Item
 }
 
 func (ast *AST) Next() (ItemID, bool) {
-	currItem, ok := ast.Tree[ast.CurrentItem]
+	item, ok := ast.Tree[ast.CurrentID]
 	if !ok {
-		return ItemError, false
+		return ItemErrorID, false
 	}
-	if !ast.Tree[currItem].Done {
-		return ItemNone, false
+	if !item.Done {
+		return ItemWaitID, false
 	}
-	if ast.Tree[currItem] == ItemStop {
-		return ItemStop, false
+	isNext := couldBeProcessed(item.ID)
+	if isNext {
+		if item.Result.IsSuccessful {
+			ast.CurrentID = item.NextIfSuccess
+		} else {
+			ast.CurrentID = item.NextIfFailure
+		}
 	}
-	if ast.Tree[currItem].Result.IsSuccessful {
-		ast.Tree[currItem] = ast.Tree[currItem].NextIfSuccess
-	} else {
-		ast.Tree[currItem] = ast.Tree[currItem].NextIfFailure
-	}
-	return ast.Tree[currItem], true
+	return item.ID, isNext
+}
+
+func (ast *AST) Reset() {
+	ast.CurrentID = ItemStartID
+}
+
+func (ast *AST) IsProcessed() bool {
+	return ast.CurrentID == ItemDoneID
+}
+
+func (ast *AST) GetCurrentItem() (Item, bool) {
+	item, ok := ast.Tree[ast.CurrentID]
+	return item, ok
+}
+
+func couldBeProcessed(id ItemID) bool {
+	return id >= ItemStartID
 }
